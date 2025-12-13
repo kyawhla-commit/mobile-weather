@@ -1,0 +1,25 @@
+═══════════════════════════════════════════════════════════
+  INSTALL NETINFO PACKAGE FOR OFFLINE MODE
+═══════════════════════════════════════════════════════════
+
+📦 INSTALL COMMAND:
+   npx expo install @react-native-community/netinfo
+
+📝 AFTER INSTALLATION, UPDATE 2 FILES:
+
+   1. src/context/OfflineContext.tsx (line 3)
+      Change: import NetInfo from '../services/netinfo-mock';
+      To:     import NetInfo from '@react-native-community/netinfo';
+
+   2. src/services/offlineStorage.ts (line 2)
+      Change: import NetInfo from './netinfo-mock';
+      To:     import NetInfo from '@react-native-community/netinfo';
+
+🔄 RESTART SERVER:
+   npx expo start
+
+✅ CURRENT STATUS:
+   - App runs with mock (always shows online)
+   - Install package for real offline detection
+
+═══════════════════════════════════════════════════════════

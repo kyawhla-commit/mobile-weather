@@ -1,0 +1,351 @@
+MY LOCATION FEATURE - ARCHITECTURE DIAGRAM
+==========================================
+
+USER INTERACTION FLOW
+---------------------
+
+┌─────────────────────────────────────────────────────────────────┐
+│                         WEATHER TAB                             │
+│                                                                 │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  [Search Input...]  [📍 GPS]  [🔍 Search]              │  │
+│  │                       ↓                                   │  │
+│  │                  User Taps                                │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                    handleMyLocation()                           │
+│                                                                 │
+│  1. setLoadingLocation(true)                                   │
+│  2. Call getMyLocationWeather()                                │
+│  3. Show dialog with options                                   │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                  LOCATION SERVICE LAYER                         │
+│                  (location.ts)                                  │
+│                                                                 │
+│  getMyLocationWeather()                                        │
+│  ├─ getCurrentLocation()                                       │
+│  │  └─ expo-location GPS                                       │
+│  │                                                             │
+│  ├─ findLocationByCoordinates()                               │
+│  │  ├─ Strategy 1: getLocationByGeoposition() ✅ PRIMARY      │
+│  │  ├─ Strategy 2: Text search (fallback)                     │
+│  │  └─ Strategy 3: Nearby search (last resort)                │
+│  │                                                             │
+│  └─ getCityFromCoordinates() [Optional, for display]          │
+│     └─ expo-location reverse geocoding                         │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                   ACCUWEATHER API LAYER                         │
+│                   (weather.ts)                                  │
+│                                                                 │
+│  getLocationByGeoposition(lat, lon)                            │
+│  ├─ GET /locations/v1/cities/geoposition/search               │
+│  └─ Returns: LocationData with Key                             │
+│                                                                 │
+│  getCurrentConditions(locationKey)                             │
+│  get5DayForecast(locationKey)                                  │
+│  get12HourForecast(locationKey)                                │
+│  getWeatherAlerts(locationKey)                                 │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                      USER DIALOG                                │
+│                                                                 │
+│  ┌───────────────────────────────────────────────────────┐    │
+│  │  📍 Location Found                                    │    │
+│  │                                                       │    │
+│  │  Your location: San Francisco, CA                    │    │
+│  │                                                       │    │
+│  │  What would you like to do?                          │    │
+│  │                                                       │    │
+│  │  [Cancel]  [View Weather]  [Add to Cities]           │    │
+│  └───────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+                    ┌─────────┴─────────┐
+                    ↓                   ↓
+         ┌──────────────────┐  ┌──────────────────┐
+         │  View Weather    │  │  Add to Cities   │
+         │                  │  │                  │
+         │  Navigate to     │  │  1. addCity()    │
+         │  weather detail  │  │  2. Show success │
+         │                  │  │  3. Navigate     │
+         └──────────────────┘  └──────────────────┘
+
+
+ERROR HANDLING FLOW
+-------------------
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    POTENTIAL ERRORS                             │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+        ┌─────────────────────┼─────────────────────┐
+        ↓                     ↓                     ↓
+┌───────────────┐    ┌────────────────┐    ┌──────────────┐
+│ Permission    │    │ GPS/Network    │    │ API Errors   │
+│ Denied        │    │ Errors         │    │              │
+└───────────────┘    └────────────────┘    └──────────────┘
+        ↓                     ↓                     ↓
+┌───────────────┐    ┌────────────────┐    ┌──────────────┐
+│ Show settings │    │ Retry with     │    │ Fallback to  │
+│ prompt        │    │ fallback       │    │ next strategy│
+└───────────────┘    └────────────────┘    └──────────────┘
+        ↓                     ↓                     ↓
+        └─────────────────────┼─────────────────────┘
+                              ↓
+                    ┌──────────────────┐
+                    │ User-friendly    │
+                    │ error message    │
+                    └──────────────────┘
+
+
+FALLBACK STRATEGY DIAGRAM
+--------------------------
+
+GPS Coordinates (lat, lon)
+        ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ STRATEGY 1: AccuWeather Geoposition API (PRIMARY)              │
+│                                                                 │
+│ GET /locations/v1/cities/geoposition/search?q=lat,lon          │
+│                                                                 │
+│ ✅ Direct coordinate-to-location conversion                     │
+│ ✅ Most accurate and reliable                                   │
+│ ✅ Official AccuWeather method                                  │
+└─────────────────────────────────────────────────────────────────┘
+        ↓ (if fails)
+┌─────────────────────────────────────────────────────────────────┐
+│ STRATEGY 2: Text-Based Search (FALLBACK)                       │
+│                                                                 │
+│ 1. Reverse geocode: lat,lon → "San Francisco, CA"              │
+│ 2. Text search: searchLocation("San Francisco, CA")            │
+│ 3. Find closest match by distance                              │
+│                                                                 │
+│ ⚠️ Requires reverse geocoding (can fail)                        │
+│ ⚠️ Text search ambiguity                                        │
+└─────────────────────────────────────────────────────────────────┘
+        ↓ (if fails)
+┌─────────────────────────────────────────────────────────────────┐
+│ STRATEGY 3: Nearby Locations Search (LAST RESORT)              │
+│                                                                 │
+│ 1. Get country from coordinates                                 │
+│ 2. Search all locations in country                             │
+│ 3. Filter by distance (100km radius)                           │
+│ 4. Return closest location                                     │
+│                                                                 │
+│ ⚠️ Slower (more API calls)                                      │
+│ ⚠️ May be less accurate                                         │
+└─────────────────────────────────────────────────────────────────┘
+        ↓ (if fails)
+┌─────────────────────────────────────────────────────────────────┐
+│ ERROR: Location Not Found                                       │
+│                                                                 │
+│ Show helpful error message with coordinates                     │
+│ Suggest manual search                                           │
+└─────────────────────────────────────────────────────────────────┘
+
+
+DATA FLOW
+---------
+
+User Location (GPS)
+        ↓
+{ latitude: 37.7749, longitude: -122.4194 }
+        ↓
+AccuWeather Geoposition API
+        ↓
+LocationData {
+  Key: "347629",
+  LocalizedName: "San Francisco",
+  Country: { LocalizedName: "United States" },
+  AdministrativeArea: { LocalizedName: "California" },
+  GeoPosition: { Latitude: 37.7749, Longitude: -122.4194 }
+}
+        ↓
+Weather APIs (using locationKey)
+        ↓
+{
+  currentWeather: CurrentConditions,
+  forecast: DailyForecast[],
+  hourlyForecast: HourlyForecast[],
+  alerts: WeatherAlert[]
+}
+        ↓
+Display to User
+
+
+COMPONENT HIERARCHY
+-------------------
+
+Weather Tab (weather.tsx)
+├─ Search Bar
+├─ My Location Button (📍)
+│  ├─ Idle State: Green GPS icon
+│  ├─ Loading State: Spinner
+│  └─ Success: Trigger dialog
+├─ Search Button (🔍)
+└─ Weather Display
+   ├─ Current Weather Card
+   ├─ Hourly Forecast
+   ├─ Weather Details
+   └─ 5-Day Forecast
+
+Location Service (location.ts)
+├─ LocationService (Singleton)
+│  ├─ getCurrentLocation()
+│  ├─ getCityFromCoordinates()
+│  ├─ findLocationByCoordinates()
+│  └─ getMyLocationWeather()
+└─ Helper Functions
+   ├─ calculateDistance()
+   ├─ findClosestLocation()
+   └─ formatAddress()
+
+Weather Service (weather.ts)
+├─ getLocationByGeoposition() [NEW]
+├─ searchLocation()
+├─ getCurrentConditions()
+├─ get5DayForecast()
+├─ get12HourForecast()
+└─ getWeatherAlerts()
+
+
+TIMING DIAGRAM
+--------------
+
+Time (seconds)
+0s    User taps GPS button
+      ├─ Show loading spinner
+      │
+0.05s ├─ Check permissions (cached)
+      │
+1-5s  ├─ Get GPS coordinates
+      │  └─ Device GPS fix
+      │
+5.2s  ├─ Call Geoposition API
+      │  └─ AccuWeather API call
+      │
+5.5s  ├─ Location found!
+      │  └─ Parse response
+      │
+5.5s  ├─ Fetch weather data (parallel)
+      │  ├─ Current conditions
+      │  ├─ 5-day forecast
+      │  ├─ 12-hour forecast
+      │  └─ Weather alerts
+      │
+6.5s  ├─ All data loaded
+      │  └─ Show dialog
+      │
+      └─ User chooses action
+
+Total: 2-7 seconds (typical: 5-6 seconds)
+
+
+NULL POINTER FIX
+----------------
+
+BEFORE (Crashed):
+┌─────────────────────────────────────────┐
+│ Reverse Geocoding                       │
+│ ├─ address.country → null              │
+│ └─ CRASH: NullPointerException         │
+└─────────────────────────────────────────┘
+
+AFTER (Safe):
+┌─────────────────────────────────────────┐
+│ Reverse Geocoding                       │
+│ ├─ Try: address.country                │
+│ ├─ Fallback: address.isoCountryCode    │
+│ ├─ Fallback: ''                         │
+│ └─ ✅ No crash, graceful handling       │
+└─────────────────────────────────────────┘
+
+If reverse geocoding fails completely:
+┌─────────────────────────────────────────┐
+│ Use AccuWeather Location Data           │
+│ ├─ city: location.LocalizedName         │
+│ ├─ region: location.AdministrativeArea  │
+│ └─ country: location.Country            │
+└─────────────────────────────────────────┘
+
+
+API CALL SEQUENCE
+-----------------
+
+1. User taps GPS button
+        ↓
+2. GET GPS coordinates (expo-location)
+        ↓
+3. GET /locations/v1/cities/geoposition/search
+   Parameters: apikey, q=lat,lon
+   Response: LocationData with Key
+        ↓
+4. Parallel API calls:
+   ├─ GET /currentconditions/v1/{locationKey}
+   ├─ GET /forecasts/v1/daily/5day/{locationKey}
+   ├─ GET /forecasts/v1/hourly/12hour/{locationKey}
+   └─ GET /alerts/v1/{locationKey}
+        ↓
+5. Display weather data
+
+Total API Calls: 5 per My Location request
+Free Tier Limit: 50 calls/day
+Recommended: ~10 location requests/day
+
+
+SUCCESS INDICATORS
+------------------
+
+✅ GPS button visible in Weather tab
+✅ Tapping shows loading spinner
+✅ Console logs show:
+   📍 Getting current location...
+   ✅ Coordinates obtained
+   🎯 Strategy 1: AccuWeather Geoposition Search API
+   ✅ Location found
+✅ Dialog appears with location name
+✅ "View Weather" navigates to weather detail
+✅ "Add to Cities" saves location
+✅ No crashes or errors
+✅ Graceful error handling
+
+
+PRODUCTION CHECKLIST
+--------------------
+
+✅ Code Implementation
+   ├─ AccuWeather Geoposition API integrated
+   ├─ Null pointer crash fixed
+   ├─ Fallback strategies implemented
+   └─ Error handling comprehensive
+
+✅ User Interface
+   ├─ GPS button added
+   ├─ Loading states implemented
+   ├─ User choice dialog created
+   └─ Error messages clear
+
+✅ Testing
+   ├─ No TypeScript errors
+   ├─ No linting issues
+   ├─ Proper error handling
+   └─ Type-safe implementation
+
+✅ Documentation
+   ├─ Technical guide created
+   ├─ Implementation summary written
+   ├─ Quick start guide provided
+   └─ Architecture documented
+
+🔄 Pending
+   ├─ Device testing
+   ├─ User acceptance testing
+   └─ Production deployment
+
